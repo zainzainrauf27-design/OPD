@@ -1025,7 +1025,7 @@ tr:hover td{background:#f8fafc;}
     <div class="modal-body" id="receipt-body"></div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('receipt-modal')">Close</button>
-      <button class="btn btn-primary" onclick="window.print()">🖨️ Print</button>
+      <button class="btn btn-primary" onclick="printModal('a4')">🖨️ A4 Print</button><button class="btn btn-navy" onclick="printModal('thermal')">🧾 Thermal</button>
     </div>
   </div>
 </div>
@@ -1470,7 +1470,7 @@ function viewPatient(pid){
     <h3 class="fw-600 text-navy mb-4">📅 Visit History (${visits.length} visits)</h3>
     ${visits.length===0?'<div class="empty-state"><p>No visits recorded</p></div>':
     '<table><thead><tr><th>Date</th><th>Complaint</th><th>Diagnosis</th><th>Notes</th><th>Follow-up</th><th>Actions</th></tr></thead><tbody>'+
-    visits.map(v=>`<tr><td>${v.date}</td><td>${v.complaint||'--'}</td><td>${v.diagnosis||'--'}</td><td>${v.notes||'--'}</td><td>${v.followupDate||'--'}</td><td><button class="btn btn-sm btn-outline" onclick="viewVisit('${v.id}')">View</button></td></tr>`).join('')+'</tbody></table>'}
+    visits.map(v=>`<tr><td>${v.date}</td><td>${v.complaint||'--'}</td><td>${v.diagnosis||'--'}</td><td>${v.notes||'--'}</td><td>${v.followupDate||'--'}</td><td><button class="btn btn-sm btn-outline" onclick="viewVisit('${v.id}')">View</button> <button class="btn btn-sm btn-outline" onclick="printVisitDoc('${v.id}')">🖨️</button></td></tr>`).join('')+'</tbody></table>'}
   </div>
   <div class="card mb-4">
     <h3 class="fw-600 text-navy mb-4">💰 Fee History</h3>
@@ -1809,7 +1809,7 @@ function renderFeeHistory(){
       <td><button class="btn btn-sm btn-outline" onclick="printReceipt('${f.id}')">🖨️ Print</button></td>
     </tr>`}).join('')+'</tbody></table>';
 }
-function printReceipt(fid){
+function printReceipt(fid){ window._rcpId=fid;
   const f=db.fees.find(x=>x.id===fid);
   if(!f) return;
   const pt=db.patients.find(p=>p.id===f.patientId)||{};
@@ -2029,7 +2029,7 @@ function gSearch(q){
   box.innerHTML=items.length?items.slice(0,8).map(x=>`<div class="gs-item" onclick="gsClose();${x.a}"><span>${x.i}</span><div><strong>${x.t}</strong><br><small>${x.s}</small></div></div>`).join(''):'<div class="gs-item">Koi result nahi mila</div>';
   box.style.display='block';
 }
-function viewVisit(id){
+function viewVisit(id){ window._rcpId=null; window._visitId=id;
   const v=db.visits.find(x=>x.id===id); if(!v) return;
   const p=db.patients.find(x=>x.id===v.patientId)||{};
   const ex=db.exams.find(e=>e.patientId===v.patientId&&e.date===v.date);
@@ -2040,6 +2040,40 @@ function viewVisit(id){
   document.getElementById('receipt-body').innerHTML=h;
   openModal('receipt-modal');
 }
+function pHead(){ const s=db.settings||{}; return {c:s.clinicName||'Faiza General Hospital', d:s.doctorName||'Dr. Areeba', sp:s.spec||'Eye Specialist'}; }
+function openPrint(title,css,html){
+  const w=window.open('','_blank');
+  if(!w){ showToast('❌ Popup block hai, allow karo'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title><style>*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111;margin:0}${css}</style></head><body>${html}</body></html>`);
+  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+}
+function printReceiptDoc(mode){
+  const f=db.fees.find(x=>x.id===window._rcpId); if(!f) return;
+  const pt=db.patients.find(p=>p.id===f.patientId)||{};
+  const h=pHead(), th=mode==='thermal';
+  const r=(a,b)=>`<div class="r"><span>${a}</span><b>${b}</b></div>`;
+  const css=th?'@page{size:80mm auto;margin:3mm}body{width:74mm;font-size:12px;padding:2mm}.c{text-align:center}.r{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dashed #999}h2{margin:0;font-size:15px}hr{border:0;border-top:1px dashed #000}':'@page{size:A4;margin:15mm}body{padding:10px;font-size:14px}.box{max-width:560px;margin:0 auto;border:2px solid #0F4C75;border-radius:10px;overflow:hidden}.hd{background:#0F4C75;color:#fff;text-align:center;padding:18px}.hd h2{margin:0}.bd{padding:20px}.c{text-align:center}.r{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #bbb}';
+  const rows=r('Receipt #',f.receipt)+r('Date',f.date)+r('Patient',pt.name||'--')+r('Patient ID',pt.id||'--')+r('Service',f.service)+r('Method',f.method)+r('Total','PKR '+f.total)+r('Paid','PKR '+f.paid)+r('Remaining','PKR '+f.remaining)+r('Status',f.status);
+  const foot='<p class="c" style="font-size:11px;margin-top:14px">Thank you. Get well soon.<br>Computer generated receipt</p>';
+  const html=th?`<div class="c"><h2>${h.c}</h2><div>${h.d} — ${h.sp}</div></div><hr>${rows}${foot}`:`<div class="box"><div class="hd"><h2>${h.c}</h2><div>${h.d} — ${h.sp}</div></div><div class="bd">${rows}${foot}</div></div>`;
+  openPrint('Receipt '+f.receipt,css,html);
+}
+function printVisitDoc(id){
+  const v=db.visits.find(x=>x.id===id); if(!v) return;
+  const p=db.patients.find(x=>x.id===v.patientId)||{};
+  const ex=db.exams.find(e=>e.patientId===v.patientId&&e.date===v.date)||null;
+  const h=pHead();
+  const css='@page{size:A4;margin:15mm}body{padding:10px;font-size:13px}.hd{text-align:center;border-bottom:3px solid #0F4C75;padding-bottom:10px;margin-bottom:14px}.hd h1{margin:0;color:#0F4C75;font-size:22px}h3{color:#0F4C75;border-bottom:1px solid #ccc;padding-bottom:3px;margin:16px 0 6px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px;text-align:left}th{background:#f0f4f8}.sig{margin-top:60px;text-align:right}.sig div{display:inline-block;border-top:1px solid #000;padding-top:4px;min-width:200px;text-align:center}';
+  let b=`<div class="hd"><h1>${h.c}</h1><div>${h.d} — ${h.sp}</div></div><table><tr><td><b>Patient:</b> ${p.name||'--'}</td><td><b>ID:</b> ${p.id||'--'}</td><td><b>Age/Sex:</b> ${p.age||'--'}/${p.gender||'--'}</td><td><b>Date:</b> ${v.date}</td></tr></table><h3>Complaint</h3><p>${v.complaint||'--'}</p><h3>Diagnosis</h3><p>${(v.diagnosis||'--').replace(/\n/g,'<br>')}</p>`;
+  if(ex){
+    b+=`<h3>Visual Acuity / IOP</h3><table><tr><th></th><th>Distance</th><th>Near</th><th>IOP</th></tr><tr><td>OD</td><td>${ex.va.odDist||'--'}</td><td>${ex.va.odNear||'--'}</td><td>${ex.iop.od||'--'}</td></tr><tr><td>OS</td><td>${ex.va.osDist||'--'}</td><td>${ex.va.osNear||'--'}</td><td>${ex.iop.os||'--'}</td></tr></table><h3>Refraction</h3><table><tr><th></th><th>SPH</th><th>CYL</th><th>Axis</th><th>ADD</th></tr>`;
+    b+=['od','os'].map(k=>`<tr><td>${k.toUpperCase()}</td><td>${ex.refraction[k].sph||'--'}</td><td>${ex.refraction[k].cyl||'--'}</td><td>${ex.refraction[k].axis||'--'}</td><td>${ex.refraction[k].add||'--'}</td></tr>`).join('')+'</table>';
+    if((ex.prescription||[]).length) b+='<h3>Prescription (Rx)</h3><table><tr><th>Medicine</th><th>Dose</th><th>Frequency</th><th>Duration</th><th>Instructions</th></tr>'+ex.prescription.map(r=>`<tr><td>${r.med}</td><td>${r.dose||''}</td><td>${r.freq||''}</td><td>${r.dur||''}</td><td>${r.inst||''}</td></tr>`).join('')+'</table>';
+  }
+  b+=`<h3>Doctor Notes</h3><p>${v.notes||'--'}</p><h3>Follow-up</h3><p>${v.followupDate||'--'}</p><div class="sig"><div>${h.d}<br>${h.sp}</div></div>`;
+  openPrint('Visit Report',css,b);
+}
+function printModal(mode){ if(window._rcpId) printReceiptDoc(mode); else if(window._visitId) printVisitDoc(window._visitId); }
 // ── Init prescription row
 addRxRow();
 
