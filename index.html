@@ -246,6 +246,9 @@ tr:hover td{background:#f8fafc;}
   body{background:#fff;}
 }
 
+.gs-box{display:none;position:absolute;top:42px;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-md);z-index:300;max-height:340px;overflow-y:auto;}
+.gs-item{display:flex;gap:10px;padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;}
+.gs-item:hover{background:var(--teal-light);}
 /* ── MISC ── */
 .empty-state{text-align:center;padding:48px 24px;color:var(--text-light);}
 .empty-state .e-icon{font-size:48px;margin-bottom:12px;}
@@ -337,7 +340,7 @@ tr:hover td{background:#f8fafc;}
   <button class="tb-menu-btn" onclick="toggleSidebar()">☰</button>
   <div class="tb-search">
     <span class="tb-search-icon">🔍</span>
-    <input type="text" placeholder="Search patients, appointments, receipts..." id="global-search" oninput="globalSearch(this.value)">
+    <input type="text" placeholder="Search patients, appointments, receipts..." id="global-search" oninput="gSearch(this.value)" autocomplete="off"><div id="gs-results" class="gs-box"></div>
   </div>
   <div class="tb-actions">
     <button class="tb-notif" onclick="navigate('notifications')">🔔<span class="notif-badge"></span></button>
@@ -395,6 +398,7 @@ tr:hover td{background:#f8fafc;}
         <option>Female</option>
       </select>
     </div>
+    <div style="margin-bottom:10px;"><select class="filter-select" id="patient-sort" onchange="ptPage=1;renderPatientsTable()"><option value="new">Sort: Newest first</option><option value="old">Sort: Oldest first</option><option value="name">Sort: Name A-Z</option></select></div>
     <div class="table-wrap" id="patients-table"></div>
   </div>
 </div>
@@ -1353,6 +1357,12 @@ function renderPatientsTable(search='',genderFilter=''){
     return match && gMatch;
   });
   document.getElementById('patient-count-label').textContent = pts.length+' patients';
+  const sv=(document.getElementById('patient-sort')||{}).value||'new';
+  pts=pts.slice().sort((a,b)=>sv==='name'?(a.name||'').localeCompare(b.name||''):sv==='old'?(a.id>b.id?1:-1):(a.id<b.id?1:-1));
+  const pages=Math.max(1,Math.ceil(pts.length/PAGE_SIZE));
+  if(ptPage>pages) ptPage=pages;
+  pts=pts.slice((ptPage-1)*PAGE_SIZE,ptPage*PAGE_SIZE);
+  setTimeout(()=>{ const t=document.getElementById('patients-table'); if(t&&pages>1) t.insertAdjacentHTML('beforeend',`<div class="flex items-center justify-between" style="padding:12px 4px;"><button class="btn btn-sm btn-outline" ${ptPage<=1?'disabled':''} onclick="ptPage--;renderPatientsTable()">← Prev</button><span class="text-muted">Page ${ptPage} / ${pages}</span><button class="btn btn-sm btn-outline" ${ptPage>=pages?'disabled':''} onclick="ptPage++;renderPatientsTable()">Next →</button></div>`); },0);
   const el = document.getElementById('patients-table');
   if(pts.length===0){ el.innerHTML='<div class="empty-state"><div class="e-icon">👥</div><h3>No patients found</h3><p>Register a new patient to get started</p></div>'; return; }
   const lastVisit=(pid)=>{const v=db.visits.filter(x=>x.patientId===pid); return v.length?v[v.length-1].date:'--';};
@@ -1377,7 +1387,7 @@ function renderPatientsTable(search='',genderFilter=''){
     </tr>`).join('')+'</tbody></table>';
 }
 
-function filterPatients(s,g){ renderPatientsTable(s,g); }
+function filterPatients(s,g){ ptPage=1; renderPatientsTable(s,g); }
 
 function deletePatient(pid){
   showConfirm('Delete Patient','Are you sure? This will delete all records for this patient.',()=>{
@@ -1459,8 +1469,8 @@ function viewPatient(pid){
   <div class="card mb-4">
     <h3 class="fw-600 text-navy mb-4">📅 Visit History (${visits.length} visits)</h3>
     ${visits.length===0?'<div class="empty-state"><p>No visits recorded</p></div>':
-    '<table><thead><tr><th>Date</th><th>Complaint</th><th>Diagnosis</th><th>Notes</th><th>Follow-up</th></tr></thead><tbody>'+
-    visits.map(v=>`<tr><td>${v.date}</td><td>${v.complaint||'--'}</td><td>${v.diagnosis||'--'}</td><td>${v.notes||'--'}</td><td>${v.followupDate||'--'}</td></tr>`).join('')+'</tbody></table>'}
+    '<table><thead><tr><th>Date</th><th>Complaint</th><th>Diagnosis</th><th>Notes</th><th>Follow-up</th><th>Actions</th></tr></thead><tbody>'+
+    visits.map(v=>`<tr><td>${v.date}</td><td>${v.complaint||'--'}</td><td>${v.diagnosis||'--'}</td><td>${v.notes||'--'}</td><td>${v.followupDate||'--'}</td><td><button class="btn btn-sm btn-outline" onclick="viewVisit('${v.id}')">View</button></td></tr>`).join('')+'</tbody></table>'}
   </div>
   <div class="card mb-4">
     <h3 class="fw-600 text-navy mb-4">💰 Fee History</h3>
@@ -1992,7 +2002,7 @@ function populatePatientDropdowns(){
   });
 }
 function openModal(id){ document.getElementById(id).classList.add('open'); }
-function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+function closeModal(id){ document.getElementById(id).classList.remove('open'); const h=document.querySelector('#receipt-modal h3'); if(id==='receipt-modal'&&h) h.textContent='🧾 Payment Receipt'; }
 function showToast(msg){ const el=document.getElementById('toast'); el.textContent=msg; el.style.display='block'; setTimeout(()=>el.style.display='none',3000); }
 function showConfirm(title,msg,cb){
   document.getElementById('confirm-title').textContent=title;
@@ -2003,6 +2013,33 @@ function showConfirm(title,msg,cb){
 function newVisitForPatient(pid){ populatePatientDropdowns(); document.getElementById('visit-patient').value=pid; openVisitModal(); }
 function openVisitModal(){ document.getElementById('visit-modal').classList.add('open'); document.getElementById('visit-date').value=new Date().toISOString().split('T')[0]; }
 
+let ptPage=1; const PAGE_SIZE=10;
+function gsClose(){ const r=document.getElementById('gs-results'); if(r) r.style.display='none'; }
+document.addEventListener('click',e=>{ if(!e.target.closest('.tb-search')) gsClose(); });
+function gSearch(q){
+  const box=document.getElementById('gs-results');
+  q=(q||'').trim().toLowerCase();
+  if(q.length<2){ box.style.display='none'; return; }
+  const has=(...xs)=>xs.some(x=>(x||'').toLowerCase().includes(q));
+  const items=[];
+  db.patients.forEach(p=>{ if(has(p.name,p.id,p.phone,p.cnic)) items.push({i:'👤',t:p.name,s:p.id+' · '+p.phone,a:`viewPatient('${p.id}')`}); });
+  db.appointments.forEach(a=>{ if(has(a.patientName,a.patientId)) items.push({i:'📅',t:'Appointment: '+a.patientName,s:a.date+' '+(a.time||''),a:`navigate('appointments')`}); });
+  db.visits.forEach(v=>{ if(has(v.diagnosis,v.complaint)){ const p=db.patients.find(x=>x.id===v.patientId)||{}; items.push({i:'🩺',t:'Visit: '+(v.diagnosis||v.complaint),s:(p.name||'')+' · '+v.date,a:`viewVisit('${v.id}')`}); } });
+  db.fees.forEach(f=>{ if(has(f.receipt)) items.push({i:'🧾',t:f.receipt,s:'PKR '+f.total+' · '+f.status,a:`printReceipt('${f.id}')`}); });
+  box.innerHTML=items.length?items.slice(0,8).map(x=>`<div class="gs-item" onclick="gsClose();${x.a}"><span>${x.i}</span><div><strong>${x.t}</strong><br><small>${x.s}</small></div></div>`).join(''):'<div class="gs-item">Koi result nahi mila</div>';
+  box.style.display='block';
+}
+function viewVisit(id){
+  const v=db.visits.find(x=>x.id===id); if(!v) return;
+  const p=db.patients.find(x=>x.id===v.patientId)||{};
+  const ex=db.exams.find(e=>e.patientId===v.patientId&&e.date===v.date);
+  const row=(a,b)=>`<div class="receipt-row"><span>${a}</span><strong>${b||'--'}</strong></div>`;
+  let h=row('Patient',(p.name||'--')+' ('+(p.id||'')+')')+row('Date',v.date)+row('Doctor',v.doctor)+row('Complaint',v.complaint)+row('Diagnosis',v.diagnosis)+row('Notes',v.notes)+row('Follow-up',v.followupDate);
+  if(ex){ h+=row('VA OD / OS',(ex.va.odDist||'--')+' / '+(ex.va.osDist||'--'))+row('IOP OD / OS',(ex.iop.od||'--')+' / '+(ex.iop.os||'--'))+row('Prescription',(ex.prescription||[]).map(r=>r.med).join(', ')); }
+  document.querySelector('#receipt-modal h3').textContent='🩺 Visit Details';
+  document.getElementById('receipt-body').innerHTML=h;
+  openModal('receipt-modal');
+}
 // ── Init prescription row
 addRxRow();
 
